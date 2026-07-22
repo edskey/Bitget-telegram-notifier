@@ -63,8 +63,9 @@ function formatEvent(event) {
     `🔵 <b>${escapeHtml(label)}:</b> ${escapeHtml(value)}`
   );
   return [
-    `👇 <b>${escapeHtml(event.title)}</b>`,
+    '🔥 <b>Новая промоакция Bitget</b>',
     '',
+    `🔵 <b>Название:</b> ${escapeHtml(event.title)}`,
     ...rows,
     '',
     `🔵 <b>Ссылка:</b> <a href="${escapeHtml(event.url)}">Открыть</a>`,
@@ -100,6 +101,7 @@ function payload(req) {
     id: String(event.id || '').slice(0, 1000),
     title: String(event.title || '').slice(0, 300),
     url: String(event.url || '').slice(0, 2000),
+    force: event.force === true,
     fields: Array.isArray(event.fields) ? event.fields.slice(0, 30).map(([a, b]) => [String(a), String(b)]) : [],
   })).filter((event) => sources.includes(event.source) && event.id && event.title && event.url);
   return events.length === body.events.slice(0, 500).length ? { sources, events } : null;
@@ -125,10 +127,11 @@ async function handler(req, res) {
       const existing = state.sources[source];
       if (!existing?.sentIds) {
         state.sources[source] = { sentIds: uniqueIds(ids) };
+        deliveries.push(...events.filter((event) => event.force).reverse());
         continue;
       }
       const seen = new Set(existing.sentIds);
-      deliveries.push(...events.filter((event) => !seen.has(event.id)).reverse());
+      deliveries.push(...events.filter((event) => event.force || !seen.has(event.id)).reverse());
     }
 
     state.checkedAt = new Date().toISOString();

@@ -11,6 +11,7 @@ function validateEvent(event, sourceName) {
     id: String(event.id).slice(0, 1000),
     title: String(event.title).slice(0, 300),
     url: String(event.url).slice(0, 2000),
+    force: event.force === true,
     fields: Array.isArray(event.fields)
       ? event.fields.slice(0, 30).map(([label, value]) => [String(label).slice(0, 100), String(value).slice(0, 500)])
       : [],
@@ -20,7 +21,7 @@ function validateEvent(event, sourceName) {
 async function main() {
   const results = await Promise.all(adapters.map(async (adapter) => {
     if (!adapter?.name || typeof adapter.collect !== 'function') throw new Error('Invalid source adapter');
-    const events = await adapter.collect();
+    const events = await adapter.collect({ forceLatest: process.env.TEST_LATEST_PROMO === '1' });
     if (!Array.isArray(events)) throw new Error(`${adapter.name} did not return an array`);
     return events.map((event) => validateEvent(event, adapter.name));
   }));

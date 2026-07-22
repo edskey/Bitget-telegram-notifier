@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '*/5 * * * *'
   workflow_dispatch:
+    inputs:
+      send_latest_test:
+        description: 'Отправить одну реальную актуальную промоакцию как тест'
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -19,6 +25,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Collect events
+        env:
+          TEST_LATEST_PROMO: ${{ inputs.send_latest_test && '1' || '0' }}
         run: node scripts/collect.js > /tmp/events.json
       - name: Trigger protected Vercel endpoint
         env:

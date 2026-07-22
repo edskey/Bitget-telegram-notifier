@@ -66,8 +66,31 @@ test('baselines a source, sends later events separately, and deduplicates them',
   assert.equal((await invoke([event('old'), event('one'), event('two')])).body.sent, 2);
   assert.equal(telegram.length, 2);
   assert(telegram.every((message) => message.parse_mode === 'HTML'));
+  assert.match(telegram[0].text, /^🔥 <b>Новая промоакция Bitget<\/b>/);
+  assert.match(telegram[0].text, /🔵 <b>Название:<\/b> Offer two/);
   assert.equal((await invoke([event('old'), event('one'), event('two')])).body.sent, 0);
   assert.equal(telegram.length, 2);
+});
+
+test('sends an explicitly forced real-card test even during first initialization', async (context) => {
+  Object.assign(process.env, { CHECK_SECRET: 'secret', UPSTASH_REDIS_REST_URL: 'https://redis.test', UPSTASH_REDIS_REST_TOKEN: 'redis-token', TELEGRAM_BOT_TOKEN: 'bot-token', TELEGRAM_CHAT_ID: '@channel' });
+  let state = null;
+  let telegramCalls = 0;
+  context.mock.method(global, 'fetch', async (url, options = {}) => {
+    if (String(url) === 'https://redis.test') {
+      const command = JSON.parse(options.body);
+      if (command[0] === 'SET' && command.includes('NX')) return new Response(JSON.stringify({ result: 'OK' }));
+      if (command[0] === 'GET') return new Response(JSON.stringify({ result: state && JSON.stringify(state) }));
+      if (command[0] === 'SET') state = JSON.parse(command[2]);
+      return new Response(JSON.stringify({ result: null }));
+    }
+    if (String(url).includes('/sendMessage')) { telegramCalls += 1; return new Response(JSON.stringify({ ok: true })); }
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  const capture = responseCapture();
+  await handler({ method: 'POST', headers: { authorization: 'Bearer secret' }, body: { sources: ['offers'], events: [{ source: 'offers', id: 'real-card', title: 'Real card', url: 'https://example.com', force: true, fields: [] }] } }, capture.res);
+  assert.equal(capture.result().body.sent, 1);
+  assert.equal(telegramCalls, 1);
 });
 
 test('checkpoints each message so a later Telegram failure is retried alone', async (context) => {
