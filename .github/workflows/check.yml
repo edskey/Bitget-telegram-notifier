@@ -1,0 +1,35 @@
+name: Check monitored sources
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telegram-monitor-check
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Collect events
+        run: node scripts/collect.js > /tmp/events.json
+      - name: Trigger protected Vercel endpoint
+        env:
+          CHECK_URL: ${{ secrets.VERCEL_CHECK_URL }}
+          CHECK_SECRET: ${{ secrets.CHECK_SECRET }}
+        run: |
+          test -n "$CHECK_URL"
+          test -n "$CHECK_SECRET"
+          curl --fail-with-body --silent --show-error --max-time 30 \
+            -X POST \
+            -H "Authorization: Bearer $CHECK_SECRET" \
+            -H "Content-Type: application/json" \
+            --data-binary @/tmp/events.json \
+            "$CHECK_URL"
