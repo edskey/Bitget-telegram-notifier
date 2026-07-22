@@ -1,7 +1,8 @@
 const crypto = require('crypto');
 
-const STATE_KEY = 'telegram-monitor:state:v1';
-const LOCK_KEY = 'telegram-monitor:lock:v1';
+// This namespace permits sharing one Upstash database with other bots safely.
+const STATE_KEY = 'bitget-candybomb-monitor:state:v1';
+const LOCK_KEY = 'bitget-candybomb-monitor:lock:v1';
 const MAX_SENT_IDS = 1000;
 
 function env(name) {
