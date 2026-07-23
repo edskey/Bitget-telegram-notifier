@@ -19,9 +19,10 @@ function validateEvent(event, sourceName) {
 }
 
 async function main() {
+  const testSource = process.env.TEST_SOURCE || '';
   const results = await Promise.all(adapters.map(async (adapter) => {
     if (!adapter?.name || typeof adapter.collect !== 'function') throw new Error('Invalid source adapter');
-    const events = await adapter.collect({ forceLatest: process.env.TEST_LATEST_PROMO === '1' });
+    const events = await adapter.collect({ forceLatest: testSource === adapter.name });
     if (!Array.isArray(events)) throw new Error(`${adapter.name} did not return an array`);
     return events.map((event) => validateEvent(event, adapter.name));
   }));
