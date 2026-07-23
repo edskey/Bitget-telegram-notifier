@@ -85,6 +85,15 @@ async function sendTelegram(text) {
   });
   const body = await response.json();
   if (!response.ok || !body.ok) throw new Error(`Telegram: ${body.description || response.status}`);
+  const chat = body.result?.chat || {};
+  // This receipt is returned only to the protected scheduler request.  It lets
+  // the workflow prove the destination without exposing the numeric chat ID.
+  return {
+    messageId: Number.isInteger(body.result?.message_id) ? body.result.message_id : null,
+    chat: typeof chat.username === 'string' && chat.username
+      ? `@${chat.username}`
+      : (typeof chat.title === 'string' && chat.title ? chat.title : (chat.type || 'unknown')),
+  };
 }
 
 function payload(req) {
@@ -136,13 +145,20 @@ async function handler(req, res) {
 
     state.checkedAt = new Date().toISOString();
     await saveState(state);
+    const deliveryReport = [];
     for (const event of deliveries) {
-      await sendTelegram(formatEvent(event));
+      const telegram = await sendTelegram(formatEvent(event));
       state.sources[event.source].sentIds = uniqueIds([event.id, ...state.sources[event.source].sentIds]);
       state.checkedAt = new Date().toISOString();
       await saveState(state);
+      deliveryReport.push({ source: event.source, id: event.id, telegram });
     }
-    return respond(res, 200, { ok: true, sent: deliveries.length, sources: input.sources.length });
+    return respond(res, 200, {
+      ok: true,
+      sent: deliveryReport.length,
+      sources: input.sources.length,
+      deliveries: deliveryReport,
+    });
   } catch (error) {
     return respond(res, 500, { ok: false, error: error.message });
   } finally {

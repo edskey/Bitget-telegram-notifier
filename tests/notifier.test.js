@@ -43,7 +43,7 @@ test('baselines a source, sends later events separately, and deduplicates them',
     }
     if (String(url).includes('/sendMessage')) {
       telegram.push(JSON.parse(options.body));
-      return new Response(JSON.stringify({ ok: true }));
+      return new Response(JSON.stringify({ ok: true, result: { message_id: telegram.length, chat: { username: 'channel' } } }));
     }
     throw new Error(`Unexpected URL: ${url}`);
   });
@@ -63,7 +63,12 @@ test('baselines a source, sends later events separately, and deduplicates them',
     fields: [['Timer', '01:00:00']],
   });
   assert.equal((await invoke([event('old')])).body.sent, 0);
-  assert.equal((await invoke([event('old'), event('one'), event('two')])).body.sent, 2);
+  const delivered = await invoke([event('old'), event('one'), event('two')]);
+  assert.equal(delivered.body.sent, 2);
+  assert.deepEqual(delivered.body.deliveries, [
+    { source: 'offers', id: 'two', telegram: { messageId: 1, chat: '@channel' } },
+    { source: 'offers', id: 'one', telegram: { messageId: 2, chat: '@channel' } },
+  ]);
   assert.equal(telegram.length, 2);
   assert(telegram.every((message) => message.parse_mode === 'HTML'));
   assert.match(telegram[0].text, /^🔥 <b>Новая промоакция Bitget<\/b>/);
@@ -84,7 +89,7 @@ test('sends an explicitly forced real-card test even during first initialization
       if (command[0] === 'SET') state = JSON.parse(command[2]);
       return new Response(JSON.stringify({ result: null }));
     }
-    if (String(url).includes('/sendMessage')) { telegramCalls += 1; return new Response(JSON.stringify({ ok: true })); }
+    if (String(url).includes('/sendMessage')) { telegramCalls += 1; return new Response(JSON.stringify({ ok: true, result: { message_id: telegramCalls, chat: { username: 'channel' } } })); }
     throw new Error(`Unexpected URL: ${url}`);
   });
   const capture = responseCapture();
@@ -107,7 +112,7 @@ test('checkpoints each message so a later Telegram failure is retried alone', as
     }
     if (String(url).includes('/sendMessage')) {
       telegramCalls += 1;
-      return telegramCalls === 2 ? new Response(JSON.stringify({ ok: false, description: 'temporary failure' }), { status: 500 }) : new Response(JSON.stringify({ ok: true }));
+      return telegramCalls === 2 ? new Response(JSON.stringify({ ok: false, description: 'temporary failure' }), { status: 500 }) : new Response(JSON.stringify({ ok: true, result: { message_id: telegramCalls, chat: { username: 'channel' } } }));
     }
     throw new Error(`Unexpected URL: ${url}`);
   });
