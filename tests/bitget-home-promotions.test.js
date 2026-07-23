@@ -29,6 +29,16 @@ test('marks only the requested latest home promotion as a manual test', async ()
   assert.equal(events.find((event) => event.force).id, 'bitget-home:new');
 });
 
+test('skips a homepage banner whose authoritative promotion sessions have ended', async () => {
+  const fetchImpl = async (url) => {
+    if (String(url) === 'https://www.bitget.com/ru') return new Response('<script id="__REACT_QUERY_STATE__" type="application/json">{"queries":[{"queryKey":["useBannerList"],"state":{"data":{"bannerList":[{"id":"ended","title":"Ended","jumpUrl":"/ru/launchhub/earnings-prediction"}]}}}]}</script>');
+    if (String(url).includes('/vote/info')) return new Response(JSON.stringify({ code: '00000', data: { endTime: '1' } }));
+    if (String(url).includes('/session/list')) return new Response(JSON.stringify({ code: '00000', data: [] }));
+    throw new Error(`Unexpected URL: ${url}`);
+  };
+  assert.deepEqual(await require('../sources/bitget-home-promotions').collect({ fetchImpl }), []);
+});
+
 test('uses only requested public promotion types', () => {
   assert.equal(promotionType('MIX'), 'Фьючерсы');
   assert.equal(promotionType('other'), 'Неопределенно');

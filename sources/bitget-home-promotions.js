@@ -46,7 +46,10 @@ async function resolveEarningsPrediction(banner, { fetchImpl, now, force = false
     postJson('/act/stock/earnings/vote/session/list', {}, fetchImpl),
   ]);
   const sessions = (sessionData?.sessions || []).filter((session) => Number(session.status) === 20);
-  if (!sessions.length) throw new Error('Earnings prediction has no active sessions');
+  // Bitget can keep a homepage banner visible briefly after its authoritative
+  // sessions list is empty. This is a completed promotion, not a collector
+  // failure; skip it so it cannot block independent sources such as CandyBomb.
+  if (!sessions.length) return null;
 
   const values = await Promise.all(sessions.map((session) =>
     poolValueInUsdt(session.totalPool, session.ticketInfo?.token, { fetchImpl })
@@ -78,9 +81,10 @@ async function collect({ fetchImpl = fetch, forceLatest = false } = {}) {
   });
   const latestId = forceLatest && candidates.reduce((latest, banner) =>
     Number(banner.unixStartTime || 0) > Number(latest?.unixStartTime || 0) ? banner : latest, null)?.id;
-  return Promise.all(candidates.map((banner) => resolveEarningsPrediction(banner, {
+  const resolved = await Promise.all(candidates.map((banner) => resolveEarningsPrediction(banner, {
     fetchImpl, now: Date.now(), force: String(banner.id) === String(latestId),
   })));
+  return resolved.filter(Boolean);
 }
 
 module.exports = { name: SOURCE_NAME, collect, extractBannerList, promotionType, resolveEarningsPrediction };

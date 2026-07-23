@@ -98,6 +98,33 @@ test('sends an explicitly forced real-card test even during first initialization
   assert.equal(telegramCalls, 1);
 });
 
+test('suppresses a confidently matching promotion reported by a second source', async (context) => {
+  Object.assign(process.env, { CHECK_SECRET: 'secret', UPSTASH_REDIS_REST_URL: 'https://redis.test', UPSTASH_REDIS_REST_TOKEN: 'redis-token', TELEGRAM_BOT_TOKEN: 'bot-token', TELEGRAM_CHAT_ID: '@channel' });
+  let state = { sources: { candy: { sentIds: ['old'] }, support: { sentIds: ['old'] } }, dedupeKeys: ['candybomb:sol'] };
+  let calls = 0;
+  context.mock.method(global, 'fetch', async (url, options = {}) => {
+    if (String(url) === 'https://redis.test') {
+      const command = JSON.parse(options.body);
+      if (command[0] === 'SET' && command.includes('NX')) return new Response(JSON.stringify({ result: 'OK' }));
+      if (command[0] === 'GET') return new Response(JSON.stringify({ result: JSON.stringify(state) }));
+      if (command[0] === 'SET') state = JSON.parse(command[2]);
+      return new Response(JSON.stringify({ result: null }));
+    }
+    if (String(url).includes('/sendMessage')) { calls += 1; return new Response(JSON.stringify({ ok: true, result: { message_id: calls, chat: { username: 'channel' } } })); }
+    throw new Error(`Unexpected URL: ${url}`);
+  });
+  const capture = responseCapture();
+  await handler({ method: 'POST', headers: { authorization: 'Bearer secret' }, body: {
+    sources: ['candy', 'support'],
+    events: [
+      { source: 'candy', id: 'new-candy', dedupeKey: 'candybomb:sol', title: 'SOL', url: 'https://example.com/candy', fields: [] },
+      { source: 'support', id: 'new-support', dedupeKey: 'candybomb:sol', title: 'CandyBomb x SOL', url: 'https://example.com/support', fields: [] },
+    ],
+  } }, capture.res);
+  assert.equal(capture.result().body.sent, 0);
+  assert.equal(calls, 0);
+});
+
 test('checkpoints each message so a later Telegram failure is retried alone', async (context) => {
   Object.assign(process.env, { CHECK_SECRET: 'secret', UPSTASH_REDIS_REST_URL: 'https://redis.test', UPSTASH_REDIS_REST_TOKEN: 'redis-token', TELEGRAM_BOT_TOKEN: 'bot-token', TELEGRAM_CHAT_ID: '@channel' });
   let state = null;

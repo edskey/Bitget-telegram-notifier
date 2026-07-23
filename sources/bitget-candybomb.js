@@ -40,6 +40,7 @@ function parseActivities(data, now = Date.now(), { forceLatest = false } = {}) {
     return {
       source: SOURCE_NAME,
       id: `bitget-candybomb:${id}`,
+      dedupeKey: `candybomb:${title.toLowerCase()}`,
       title,
       url: `${DETAIL_BASE_URL}${encodeURIComponent(id)}`,
       fields: [

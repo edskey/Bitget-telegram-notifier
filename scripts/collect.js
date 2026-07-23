@@ -9,6 +9,7 @@ function validateEvent(event, sourceName) {
   return {
     source: String(event.source).slice(0, 100),
     id: String(event.id).slice(0, 1000),
+    dedupeKey: event.dedupeKey ? String(event.dedupeKey).slice(0, 300) : '',
     title: String(event.title).slice(0, 300),
     url: String(event.url).slice(0, 2000),
     force: event.force === true,
@@ -22,7 +23,10 @@ async function main() {
   const testSource = process.env.TEST_SOURCE || '';
   const results = await Promise.all(adapters.map(async (adapter) => {
     if (!adapter?.name || typeof adapter.collect !== 'function') throw new Error('Invalid source adapter');
-    const events = await adapter.collect({ forceLatest: testSource === adapter.name });
+    const events = await adapter.collect({
+      forceLatest: testSource === adapter.name,
+      forceArticleId: adapter.name === 'bitget-support-promotions' ? process.env.TEST_ARTICLE_ID : '',
+    });
     if (!Array.isArray(events)) throw new Error(`${adapter.name} did not return an array`);
     return events.map((event) => validateEvent(event, adapter.name));
   }));

@@ -108,6 +108,7 @@ function payload(req) {
   const events = body.events.slice(0, 500).map((event) => ({
     source: String(event.source || '').slice(0, 100),
     id: String(event.id || '').slice(0, 1000),
+    dedupeKey: String(event.dedupeKey || '').slice(0, 300),
     title: String(event.title || '').slice(0, 300),
     url: String(event.url || '').slice(0, 2000),
     force: event.force === true,
@@ -129,6 +130,7 @@ async function handler(req, res) {
     const state = await loadState();
     state.sources ||= {};
     const deliveries = [];
+    const globallySent = new Set(state.dedupeKeys || []);
 
     for (const source of input.sources) {
       const events = input.events.filter((event) => event.source === source);
@@ -143,12 +145,20 @@ async function handler(req, res) {
       deliveries.push(...events.filter((event) => event.force || !seen.has(event.id)).reverse());
     }
 
+    const uniqueDeliveries = deliveries.filter((event) => {
+      if (!event.dedupeKey || event.force) return true;
+      if (globallySent.has(event.dedupeKey)) return false;
+      globallySent.add(event.dedupeKey);
+      return true;
+    });
+
     state.checkedAt = new Date().toISOString();
     await saveState(state);
     const deliveryReport = [];
-    for (const event of deliveries) {
+    for (const event of uniqueDeliveries) {
       const telegram = await sendTelegram(formatEvent(event));
       state.sources[event.source].sentIds = uniqueIds([event.id, ...state.sources[event.source].sentIds]);
+      if (event.dedupeKey) state.dedupeKeys = uniqueIds([event.dedupeKey, ...(state.dedupeKeys || [])]);
       state.checkedAt = new Date().toISOString();
       await saveState(state);
       deliveryReport.push({ source: event.source, id: event.id, telegram });
