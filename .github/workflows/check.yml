@@ -15,15 +15,6 @@ on:
           - bitget-candybomb-current
           - bitget-launchpool
           - bitget-home-promotions
-          - bitget-support-promotions
-    test_article:
-      description: 'Конкретная реальная статья Bitget для теста (только хаб поддержки)'
-      required: false
-      default: none
-      type: choice
-      options:
-        - none
-        - polyx-maintenance
 
 permissions:
   contents: read
@@ -41,7 +32,6 @@ jobs:
       - name: Collect events
         env:
           TEST_SOURCE: ${{ inputs.test_source || 'none' }}
-          TEST_ARTICLE_ID: ${{ inputs.test_article == 'polyx-maintenance' && '12560603890046' || '' }}
           COINGECKO_DEMO_API_KEY: ${{ secrets.COINGECKO_DEMO_API_KEY }}
         run: node scripts/collect.js > /tmp/events.json
       - name: Trigger protected Vercel endpoint

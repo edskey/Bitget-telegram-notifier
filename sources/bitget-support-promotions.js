@@ -1,8 +1,8 @@
 const { timerFromEndTime } = require('./bitget-candybomb');
 const { poolValueInUsdt } = require('./coin-gecko');
 
-const SOURCE_NAME = 'bitget-support-promotions';
-const HUB_URL = 'https://www.bitget.com/ru/support/categories/4413083952537';
+const SOURCE_NAME = 'bitget-current-promotions';
+const HUB_URL = 'https://www.bitget.com/ru/support/sections/4413154768537';
 const ARTICLE_BASE_URL = 'https://www.bitget.com/ru/support/articles/';
 
 function decodeHtml(value) {
@@ -11,7 +11,7 @@ function decodeHtml(value) {
 
 function extractArticles(html) {
   const found = new Map();
-  const pattern = /<a\b[^>]*href="([^"?#]*\/ru\/support\/articles\/(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+  const pattern = /<a\b(?=[^>]*data-testid="SupportSectionsArticlesText")[^>]*href="([^"?#]*\/ru\/support\/articles\/(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
   for (const match of String(html).matchAll(pattern)) {
     const title = decodeHtml(match[3]);
     if (title) found.set(match[2], { id: match[2], title });
@@ -74,7 +74,7 @@ async function normalizeArticle(article, { fetchImpl, force = false }) {
   };
 }
 
-async function collect({ fetchImpl = fetch, forceLatest = false, forceArticleId = '' } = {}) {
+async function collect({ fetchImpl = fetch, forceLatest = false } = {}) {
   const response = await fetchImpl(HUB_URL, { headers: { Accept: 'text/html', 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`Bitget support hub ${response.status}`);
   const articles = extractArticles(await response.text());
@@ -85,7 +85,7 @@ async function collect({ fetchImpl = fetch, forceLatest = false, forceArticleId 
   for (let index = 0; index < articles.length; index += 2) {
     const batch = await Promise.all(articles.slice(index, index + 2).map((article, offset) => normalizeArticle(article, {
       fetchImpl,
-      force: String(article.id) === String(forceArticleId) || (forceLatest && index + offset === 0),
+      force: forceLatest && index + offset === 0,
     })));
     events.push(...batch);
   }

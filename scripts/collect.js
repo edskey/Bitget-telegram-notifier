@@ -25,7 +25,6 @@ async function main() {
     if (!adapter?.name || typeof adapter.collect !== 'function') throw new Error('Invalid source adapter');
     const events = await adapter.collect({
       forceLatest: testSource === adapter.name,
-      forceArticleId: adapter.name === 'bitget-support-promotions' ? process.env.TEST_ARTICLE_ID : '',
     });
     if (!Array.isArray(events)) throw new Error(`${adapter.name} did not return an array`);
     return events.map((event) => validateEvent(event, adapter.name));
