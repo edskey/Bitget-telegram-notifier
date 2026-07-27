@@ -14,7 +14,8 @@ async function normalizeProduct(product, { fetchImpl, now, force = false }) {
   const endTime = productEndTime(product);
   if (!id || !title || !endTime) throw new Error('Launchpool product is missing id, title, or end time');
   const pools = Array.isArray(product.productSubList) ? product.productSubList : [];
-  const rewardAmount = product.totalInterestAmount || product.totalRewardAmount || pools.reduce((sum, pool) => sum + Number(pool.totalInterestAmount || pool.totalRewardAmount || 0), 0);
+  const rewardAmount = product.totalInterestAmount || product.totalRewardAmount || product.totalRewards
+    || pools.reduce((sum, pool) => sum + Number(pool.totalInterestAmount || pool.totalRewardAmount || pool.totalRewards || 0), 0);
   const rewardToken = product.productCoinName || product.rewardCoinName || pools[0]?.productCoinName || pools[0]?.rewardCoinName;
   const pool = rewardAmount && rewardToken
     ? await poolValueInUsdt(rewardAmount, rewardToken, { fetchImpl })
@@ -58,9 +59,9 @@ async function collect({ fetchImpl = fetch, forceLatest = false } = {}) {
     if (String(body?.code) !== '200') throw new Error(`Bitget Launchpool API: ${body?.msg || body?.code || 'unknown error'}`);
     responses.push(body?.data?.data);
   }
+  if (!responses.every(Array.isArray)) throw new Error('Bitget Launchpool API has no data array');
   const products = responses.flat();
-  if (!products.every(Array.isArray)) throw new Error('Bitget Launchpool API has no data array');
-  const unique = [...new Map(products.flat().map((product) => [String(product.productId || product.id), product])).values()];
+  const unique = [...new Map(products.map((product) => [String(product.productId || product.id), product])).values()];
   const latest = forceLatest && unique.reduce((last, product) => Number(product?.farmingStart || product?.startTime || 0) > Number(last?.farmingStart || last?.startTime || 0) ? product : last, null);
   return Promise.all(unique.map((product) => normalizeProduct(product, {
     fetchImpl, now: Date.now(), force: String(product.productId || product.id) === String(latest?.productId || latest?.id),
