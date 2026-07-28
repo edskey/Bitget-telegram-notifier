@@ -1,10 +1,11 @@
 const { timerFromEndTime } = require('./bitget-candybomb');
 const { poolValueInUsdt } = require('./coin-gecko');
 
-const SOURCE_NAME = 'bitget-home-promotions';
+// A new name deliberately starts a separate no-spam baseline.  The previous
+// adapter watched one discontinued card type only, so its old empty state must
+// not make the promotions currently visible on the home page look "new".
+const SOURCE_NAME = 'bitget-home-promotions-v2';
 const HOME_URL = 'https://www.bitget.com/ru';
-const EARNINGS_PATH = '/ru/launchhub/earnings-prediction';
-const BITGET_API = 'https://www.bitget.com/v1';
 
 function extractBannerList(html) {
   const match = String(html).match(/<script id="__REACT_QUERY_STATE__" type="application\/json">([\s\S]*?)<\/script>/);
@@ -18,54 +19,88 @@ function extractBannerList(html) {
 function russianUrl(jumpUrl) {
   if (!jumpUrl) return null;
   const url = new URL(jumpUrl, HOME_URL);
-  return url.origin === 'https://www.bitget.com' && url.pathname.startsWith('/ru/') ? url : null;
+  if (url.origin !== 'https://www.bitget.com') return null;
+  if (!url.pathname.startsWith('/ru/')) url.pathname = `/ru${url.pathname}`;
+  return url;
 }
 
-function promotionType(applyLine) {
-  if (String(applyLine).toUpperCase() === 'SPOT') return 'Спот';
-  if (['FUTURES', 'CONTRACT', 'MIX'].includes(String(applyLine).toUpperCase())) return 'Фьючерсы';
-  return 'Неопределенно';
+function htmlText(value) {
+  return String(value || '')
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
-async function postJson(path, data, fetchImpl) {
-  const response = await fetchImpl(`${BITGET_API}${path}`, {
-    method: 'POST',
-    headers: { Accept: 'application/json', 'Content-Type': 'application/json', locale: 'ru_RU' },
-    body: JSON.stringify(data),
+function promotionType(text) {
+  const normalized = String(text || '').toLowerCase();
+  const types = [];
+  if (/спот|spot/.test(normalized)) types.push('Спот');
+  if (/фьючерс|futures|contract|perpetual/.test(normalized)) types.push('Фьючерсы');
+  return types.length ? types.join(', ') : 'Неопределенно';
+}
+
+function extractNextData(html) {
+  const match = String(html).match(/<script id="__NEXT_DATA__" type="application\/json">([\s\S]*?)<\/script>/);
+  if (!match) return null;
+  try { return JSON.parse(match[1]); } catch { throw new Error('Bitget promotion has malformed Next data'); }
+}
+
+function pageTitle(html) {
+  const match = String(html).match(/<title>([\s\S]*?)<\/title>/i);
+  return htmlText(match?.[1]).replace(/\s*[|｜]\s*Bitget\s*$/i, '').trim();
+}
+
+function parseAmount(value) {
+  return Number(String(value || '').replace(/\s/g, '').replace(',', '.'));
+}
+
+async function poolFromText(text, fetchImpl, apiKey) {
+  const source = htmlText(text);
+  const match = source.match(/(?:призов(?:ой|ого) фонд|фонд акции|общий фонд|reward pool|prize pool)[^.]{0,160}?(?:до\s*)?([\d\s.,]+)\s*(USDT|USDC|[A-Z]{2,12})\b/i);
+  if (!match) return 'Не указан';
+  const amount = parseAmount(match[1]);
+  return poolValueInUsdt(amount, match[2], { fetchImpl, apiKey });
+}
+
+function pageInfo(html, banner) {
+  const next = extractNextData(html);
+  const info = next?.props?.pageProps?.pageInitInfo || {};
+  const ruleContent = htmlText(info.ruleContent);
+  return {
+    title: String(info.name || pageTitle(html) || banner.title || banner.secondTitle || '').trim(),
+    endTime: Number(info.endTime || banner.unixEndTime || 0),
+    text: `${info.name || ''} ${ruleContent}`,
+    ruleContent,
+  };
+}
+
+async function resolveBanner(banner, { fetchImpl, now, force = false }) {
+  const url = russianUrl(banner.jumpUrl);
+  if (!url || !banner.id) return null;
+  const response = await fetchImpl(url, {
+    headers: { Accept: 'text/html', 'Accept-Language': 'ru-RU', 'User-Agent': 'Mozilla/5.0' },
     signal: AbortSignal.timeout(20_000),
   });
-  if (!response.ok) throw new Error(`Bitget promotion API ${response.status}`);
-  const payload = await response.json();
-  if (payload?.code !== '00000') throw new Error(`Bitget promotion API: ${payload?.msg || payload?.code || 'unknown error'}`);
-  return payload.data;
-}
-
-async function resolveEarningsPrediction(banner, { fetchImpl, now, force = false }) {
-  const [info, sessionData] = await Promise.all([
-    postJson('/act/stock/earnings/vote/info', {}, fetchImpl),
-    postJson('/act/stock/earnings/vote/session/list', {}, fetchImpl),
-  ]);
-  const sessions = (sessionData?.sessions || []).filter((session) => Number(session.status) === 20);
-  // Bitget can keep a homepage banner visible briefly after its authoritative
-  // sessions list is empty. This is a completed promotion, not a collector
-  // failure; skip it so it cannot block independent sources such as CandyBomb.
-  if (!sessions.length) return null;
-
-  const values = await Promise.all(sessions.map((session) =>
-    poolValueInUsdt(session.totalPool, session.ticketInfo?.token, { fetchImpl })
-  ));
-  const totalPool = values.reduce((sum, value) => sum + Number(String(value).replace(/[^0-9,.-]/g, '').replace(/\s| /g, '').replace(',', '.')), 0);
-  const pool = sessions.length === 1 ? values[0] : `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(totalPool)} USDT`;
-
+  if (!response.ok) throw new Error(`Bitget home promotion ${response.status}`);
+  const info = pageInfo(await response.text(), banner);
+  // Some public Super Pairs cards are rendered client-side and expose neither
+  // a page title nor Next data to anonymous requests.  The banner itself is
+  // still an authoritative current promotion, so retain it with a clear,
+  // non-invented fallback instead of losing the notification entirely.
+  const title = info.title || String(banner.title || banner.secondTitle || `Промоакция Bitget #${banner.id}`).trim();
+  if (!Number.isFinite(info.endTime) || info.endTime <= 0) throw new Error('Bitget home promotion is missing end time');
   return {
     source: SOURCE_NAME,
-    id: `bitget-home:${banner.id}`,
-    title: String(banner.title || banner.secondTitle || '').trim(),
-    url: new URL(banner.jumpUrl, HOME_URL).toString(),
+    id: `bitget-home-v2:${banner.id}`,
+    dedupeKey: `home:${url.pathname.toLowerCase()}`,
+    title,
+    url: url.toString(),
     fields: [
-      ['Тип промо', promotionType(sessions[0].ticketInfo?.applyLine)],
-      ['Пул', pool],
-      ['Заканчивается через', timerFromEndTime(info?.endTime, now)],
+      ['Тип промо', promotionType(`${banner.title || ''} ${banner.secondTitle || ''} ${info.text} ${url.pathname.includes('/super-pairs/') ? 'futures' : ''}`)],
+      ['Пул', await poolFromText(info.ruleContent, fetchImpl)],
+      ['Заканчивается через', timerFromEndTime(info.endTime, now)],
     ],
     ...(force ? { force: true } : {}),
   };
@@ -74,17 +109,20 @@ async function resolveEarningsPrediction(banner, { fetchImpl, now, force = false
 async function collect({ fetchImpl = fetch, forceLatest = false } = {}) {
   const response = await fetchImpl(HOME_URL, { headers: { Accept: 'text/html', 'Accept-Language': 'ru-RU' }, signal: AbortSignal.timeout(20_000) });
   if (!response.ok) throw new Error(`Bitget home page ${response.status}`);
-  const banners = extractBannerList(await response.text());
-  const candidates = banners.filter((banner) => {
-    const url = russianUrl(banner.jumpUrl);
-    return url && String(banner.title || banner.secondTitle || '').trim() && url.pathname === EARNINGS_PATH;
-  });
-  const latestId = forceLatest && candidates.reduce((latest, banner) =>
-    Number(banner.unixStartTime || 0) > Number(latest?.unixStartTime || 0) ? banner : latest, null)?.id;
-  const resolved = await Promise.all(candidates.map((banner) => resolveEarningsPrediction(banner, {
-    fetchImpl, now: Date.now(), force: String(banner.id) === String(latestId),
-  })));
-  return resolved.filter(Boolean);
+  const banners = extractBannerList(await response.text())
+    .filter((banner) => russianUrl(banner.jumpUrl) && String(banner.id || '').trim());
+  const latest = forceLatest && banners.reduce((current, banner) =>
+    Number(banner.unixStartTime || 0) > Number(current?.unixStartTime || 0) ? banner : current, null);
+  const events = [];
+  // Public activity pages are comparatively heavy; two concurrent reads keep
+  // the GitHub Actions check within its five-minute budget and avoid a burst.
+  for (let index = 0; index < banners.length; index += 2) {
+    const batch = await Promise.all(banners.slice(index, index + 2).map((banner) => resolveBanner(banner, {
+      fetchImpl, now: Date.now(), force: String(banner.id) === String(latest?.id),
+    })));
+    events.push(...batch.filter(Boolean));
+  }
+  return events;
 }
 
-module.exports = { name: SOURCE_NAME, collect, extractBannerList, promotionType, resolveEarningsPrediction };
+module.exports = { name: SOURCE_NAME, collect, extractBannerList, russianUrl, promotionType, poolFromText, pageInfo, resolveBanner };

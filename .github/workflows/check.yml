@@ -14,7 +14,8 @@ on:
           - none
           - bitget-candybomb-current
           - bitget-launchpool
-          - bitget-home-promotions
+          - bitget-home-promotions-v2
+          - bitget-current-promotions
 
 permissions:
   contents: read
