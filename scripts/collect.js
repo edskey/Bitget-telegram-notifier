@@ -19,6 +19,26 @@ function validateEvent(event, sourceName) {
   };
 }
 
+function reconcileCandyBombDuplicates(events) {
+  const byToken = new Map();
+  for (const event of events) {
+    if (event.source !== 'bitget-candybomb-current') continue;
+    const token = String(event.title || '').trim().toLowerCase();
+    if (!token) continue;
+    byToken.set(token, [...(byToken.get(token) || []), event]);
+  }
+  return events.map((event) => {
+    if (event.source !== 'bitget-current-promotions') return event;
+    const match = String(event.title || '').match(/candybomb\s*(?:x|×)?\s*([A-Z0-9]{2,12})/i);
+    const candidates = match ? byToken.get(match[1].toLowerCase()) || [] : [];
+    // Do not guess when several campaigns use the same token.  A matching
+    // stablecoin pool already has its own key; otherwise only one candidate is
+    // an unambiguous cross-source duplicate.
+    if (candidates.length === 1 && candidates[0].dedupeKey) return { ...event, dedupeKey: candidates[0].dedupeKey };
+    return event;
+  });
+}
+
 async function main() {
   const testSource = process.env.TEST_SOURCE || '';
   const results = await Promise.all(adapters.map(async (adapter) => {
@@ -29,12 +49,16 @@ async function main() {
     if (!Array.isArray(events)) throw new Error(`${adapter.name} did not return an array`);
     return events.map((event) => validateEvent(event, adapter.name));
   }));
-  const events = results.flat().slice(0, MAX_EVENTS);
+  const events = reconcileCandyBombDuplicates(results.flat()).slice(0, MAX_EVENTS);
   process.stderr.write(`Collected ${events.length} events from ${adapters.length} sources\n`);
   process.stdout.write(JSON.stringify({ sources: adapters.map((adapter) => adapter.name), events }));
 }
 
-main().catch((error) => {
-  process.stderr.write(`${error.stack || error.message}\n`);
-  process.exitCode = 1;
-});
+if (require.main === module) {
+  main().catch((error) => {
+    process.stderr.write(`${error.stack || error.message}\n`);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { main, reconcileCandyBombDuplicates, validateEvent };

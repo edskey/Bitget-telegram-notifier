@@ -98,7 +98,7 @@ test('sends an explicitly forced real-card test even during first initialization
   assert.equal(telegramCalls, 1);
 });
 
-test('suppresses a confidently matching promotion reported by a second source', async (context) => {
+test('suppresses only a matching promotion reported by a second source in the same check', async (context) => {
   Object.assign(process.env, { CHECK_SECRET: 'secret', UPSTASH_REDIS_REST_URL: 'https://redis.test', UPSTASH_REDIS_REST_TOKEN: 'redis-token', TELEGRAM_BOT_TOKEN: 'bot-token', TELEGRAM_CHAT_ID: '@channel' });
   let state = { sources: { candy: { sentIds: ['old'] }, support: { sentIds: ['old'] } }, dedupeKeys: ['candybomb:sol'] };
   let calls = 0;
@@ -117,12 +117,12 @@ test('suppresses a confidently matching promotion reported by a second source', 
   await handler({ method: 'POST', headers: { authorization: 'Bearer secret' }, body: {
     sources: ['candy', 'support'],
     events: [
-      { source: 'candy', id: 'new-candy', dedupeKey: 'candybomb:sol', title: 'SOL', url: 'https://example.com/candy', fields: [] },
-      { source: 'support', id: 'new-support', dedupeKey: 'candybomb:sol', title: 'CandyBomb x SOL', url: 'https://example.com/support', fields: [] },
+      { source: 'candy', id: 'new-candy', dedupeKey: 'candybomb:sol:1000', title: 'SOL', url: 'https://example.com/candy', fields: [] },
+      { source: 'support', id: 'new-support', dedupeKey: 'candybomb:sol:1000', title: 'CandyBomb x SOL', url: 'https://example.com/support', fields: [] },
     ],
   } }, capture.res);
-  assert.equal(capture.result().body.sent, 0);
-  assert.equal(calls, 0);
+  assert.equal(capture.result().body.sent, 1);
+  assert.equal(calls, 1);
 });
 
 test('checkpoints each message so a later Telegram failure is retried alone', async (context) => {

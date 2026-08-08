@@ -130,7 +130,11 @@ async function handler(req, res) {
     const state = await loadState();
     state.sources ||= {};
     const deliveries = [];
-    const globallySent = new Set(state.dedupeKeys || []);
+    // Source-level sentIds are the persistent dedupe mechanism.  Cross-source
+    // dedupe is only needed within this request; persisting it for a month
+    // caused a new USDT/other token campaign to be treated as an old one.
+    const globallySent = new Set();
+    delete state.dedupeKeys;
 
     for (const source of input.sources) {
       const events = input.events.filter((event) => event.source === source);
@@ -158,7 +162,6 @@ async function handler(req, res) {
     for (const event of uniqueDeliveries) {
       const telegram = await sendTelegram(formatEvent(event));
       state.sources[event.source].sentIds = uniqueIds([event.id, ...state.sources[event.source].sentIds]);
-      if (event.dedupeKey) state.dedupeKeys = uniqueIds([event.dedupeKey, ...(state.dedupeKeys || [])]);
       state.checkedAt = new Date().toISOString();
       await saveState(state);
       deliveryReport.push({ source: event.source, id: event.id, telegram });

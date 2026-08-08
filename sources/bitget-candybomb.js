@@ -28,6 +28,15 @@ function poolInUsdt(value) {
   return `${new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 2 }).format(amount)} USDT`;
 }
 
+function campaignDedupeKey(name, pool) {
+  const token = String(name || '').trim().toLowerCase();
+  const amount = Number(pool);
+  if (!token || !Number.isFinite(amount)) return '';
+  // The same token can have several concurrent CandyBombs and can return in a
+  // later campaign.  Token-only keys silently hid both situations.
+  return `candybomb:${token}:${amount}`;
+}
+
 function parseActivities(data, now = Date.now(), { forceLatest = false } = {}) {
   const activities = data?.data?.processingActivities;
   if (!Array.isArray(activities)) throw new Error('Bitget response has no processingActivities array');
@@ -40,7 +49,7 @@ function parseActivities(data, now = Date.now(), { forceLatest = false } = {}) {
     return {
       source: SOURCE_NAME,
       id: `bitget-candybomb:${id}`,
-      dedupeKey: `candybomb:${title.toLowerCase()}`,
+      dedupeKey: campaignDedupeKey(title, activity.ieoTotalUsdt),
       title,
       url: `${DETAIL_BASE_URL}${encodeURIComponent(id)}`,
       fields: [
@@ -66,4 +75,4 @@ async function collect({ forceLatest = false } = {}) {
   return parseActivities(data, Date.now(), { forceLatest });
 }
 
-module.exports = { name: SOURCE_NAME, collect, parseActivities, timerFromEndTime, poolInUsdt };
+module.exports = { name: SOURCE_NAME, collect, parseActivities, timerFromEndTime, poolInUsdt, campaignDedupeKey };

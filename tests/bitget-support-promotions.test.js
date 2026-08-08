@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { extractArticles, articleContent, normalizeArticle } = require('../sources/bitget-support-promotions');
+const { extractArticles, articleContent, normalizeArticle, dedupeKey, parseAmount, endTimeFromContent } = require('../sources/bitget-support-promotions');
 
 test('extracts only article cards from the Current contests and promotions section', () => {
   const cards = extractArticles([
@@ -21,4 +21,19 @@ test('normalizes a promotion article from the current-promotions section', async
     ['Пул', '500 USDT'],
     ['Заканчивается через', 'Не указан'],
   ]);
+});
+
+test('preserves a comma thousands separator in CandyBomb pools', () => {
+  assert.equal(parseAmount('20,000'), 20000);
+  assert.equal(dedupeKey('CandyBomb x USDT: разделите 20,000 USDT!'), 'candybomb:usdt:20000');
+});
+
+test('extracts a pool and Moscow-time end date from the current Bitget article format', async () => {
+  const content = 'Период проведения акции:4 Август 2026 года, 16:00 – 14 Август 2026 года, 16:00 (мск) Пул торговли фьючерсами: 20,000 USDT';
+  assert.equal(endTimeFromContent(content), Date.UTC(2026, 7, 14, 13, 0));
+  const event = await normalizeArticle({ id: '12560603891052', title: 'CandyBomb x USDT: торгуйте фьючерсами и разделите 20,000 USDT!' }, {
+    fetchImpl: async () => new Response(`<script>window.state={"articleDetails":{"content":${JSON.stringify(content)}}}</script>`),
+  });
+  assert.equal(event.fields[1][1], '20 000 USDT');
+  assert.notEqual(event.fields[2][1], 'Не указан');
 });

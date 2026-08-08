@@ -9,6 +9,13 @@ function decodeHtml(value) {
   return String(value || '').replace(/<[^>]*>/g, ' ').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/\s+/g, ' ').trim();
 }
 
+function parseAmount(value) {
+  const raw = String(value || '').replace(/\s/g, '');
+  if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(raw)) return Number(raw.replace(/,/g, ''));
+  if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(raw)) return Number(raw.replace(/\./g, '').replace(',', '.'));
+  return Number(raw.replace(',', '.'));
+}
+
 function extractArticles(html) {
   const found = new Map();
   const pattern = /<a\b(?=[^>]*data-testid="SupportSectionsArticlesText")[^>]*href="([^"?#]*\/ru\/support\/articles\/(\d+)[^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
@@ -35,20 +42,36 @@ function promotionType(title, content) {
 }
 
 async function poolFromContent(content, fetchImpl) {
-  const match = content.match(/(?:призов(?:ой|ого) фонд|общ(?:ий|его) пул|пул(?: наград)?|reward pool)[^\d]{0,60}([\d\s.,]+)\s*([A-Z]{2,12})/i);
+  const match = content.match(/(?:призов(?:ой|ого) фонд|общ(?:ий|его) пул|пул|reward pool)[^\d]{0,160}([\d\s.,]+)\s*([A-Z]{2,12})/i);
   if (!match) return 'Не указан';
-  const amount = Number(match[1].replace(/\s/g, '').replace(',', '.'));
+  const amount = parseAmount(match[1]);
   return poolValueInUsdt(amount, match[2], { fetchImpl });
 }
 
 function endTimeFromContent(content) {
   const match = content.match(/акци[яи][^.!]{0,100}(?:заканчивается|до)[^\d]{0,30}(\d{13})/i);
-  return match ? Number(match[1]) : null;
+  if (match) return Number(match[1]);
+  const period = content.match(/(?:период проведения акции|период акции)[^–—\n]{0,100}[–—-]\s*(\d{1,2})\s+([А-Яа-яЁё]+)\s+(\d{4})\s+года?,?\s*(\d{1,2}):(\d{2})\s*(?:\(?(?:мск|msk)\)?)?/i);
+  if (!period) return null;
+  const monthRoots = ['январ', 'феврал', 'март', 'апрел', 'ма', 'июн', 'июл', 'август', 'сентябр', 'октябр', 'ноябр', 'декабр'];
+  const month = monthRoots.findIndex((root) => period[2].toLowerCase().startsWith(root));
+  if (month < 0) return null;
+  // Russian support articles state their campaign period in Moscow time (MSK,
+  // UTC+3).  Convert the published end point into the epoch used by timers.
+  return Date.UTC(Number(period[3]), month, Number(period[1]), Number(period[4]) - 3, Number(period[5]));
 }
 
-function dedupeKey(title) {
-  const candy = String(title).match(/candybomb\s*(?:x|×)?\s*([A-Z0-9]{2,12})/i);
-  if (candy) return `candybomb:${candy[1].toLowerCase()}`;
+function dedupeKey(title, content = '') {
+  const text = `${title} ${content}`;
+  const candy = text.match(/candybomb\s*(?:x|×)?\s*([A-Z0-9]{2,12})/i);
+  if (candy) {
+    // This is a confident match with CandyBomb's public API when the article
+    // itself names a USDT/USDC pool.  Other token pools are reconciled only
+    // when the scheduler sees exactly one current CandyBomb for that token.
+    const prize = text.match(/(?:разделите|призов(?:ой|ого) фонд|пул)[^\d]{0,40}([\d\s.,]+)\s*(USDT|USDC)\b/i);
+    if (prize) return `candybomb:${candy[1].toLowerCase()}:${parseAmount(prize[1])}`;
+    return '';
+  }
   const launchpool = String(title).match(/(?:launchpool).*?\(?([A-Z0-9]{2,12})\)?/i);
   return launchpool ? `launchpool:${launchpool[1].toLowerCase()}` : '';
 }
@@ -62,7 +85,7 @@ async function normalizeArticle(article, { fetchImpl, force = false }) {
   return {
     source: SOURCE_NAME,
     id: `bitget-support:${article.id}`,
-    ...(dedupeKey(article.title) ? { dedupeKey: dedupeKey(article.title) } : {}),
+    ...(dedupeKey(article.title, content) ? { dedupeKey: dedupeKey(article.title, content) } : {}),
     title: article.title,
     url,
     fields: [
@@ -92,4 +115,4 @@ async function collect({ fetchImpl = fetch, forceLatest = false } = {}) {
   return events;
 }
 
-module.exports = { name: SOURCE_NAME, collect, extractArticles, articleContent, normalizeArticle, promotionType, dedupeKey };
+module.exports = { name: SOURCE_NAME, collect, extractArticles, articleContent, normalizeArticle, promotionType, dedupeKey, parseAmount, endTimeFromContent };
