@@ -11,6 +11,7 @@ function decodeHtml(value) {
 
 function parseAmount(value) {
   const raw = String(value || '').replace(/\s/g, '');
+  if (!/\d/.test(raw)) return Number.NaN;
   if (/^\d{1,3}(?:,\d{3})+(?:\.\d+)?$/.test(raw)) return Number(raw.replace(/,/g, ''));
   if (/^\d{1,3}(?:\.\d{3})+(?:,\d+)?$/.test(raw)) return Number(raw.replace(/\./g, '').replace(',', '.'));
   return Number(raw.replace(',', '.'));
@@ -41,11 +42,18 @@ function promotionType(title, content) {
   return types.length ? types.join(', ') : 'Неопределенно';
 }
 
-async function poolFromContent(content, fetchImpl) {
+async function poolFromContent(content, fetchImpl, apiKey) {
   const match = content.match(/(?:призов(?:ой|ого) фонд|общ(?:ий|его) пул|пул|reward pool)[^\d]{0,160}([\d\s.,]+)\s*([A-Z]{2,12})/i);
   if (!match) return 'Не указан';
   const amount = parseAmount(match[1]);
-  return poolValueInUsdt(amount, match[2], { fetchImpl });
+  try {
+    return await poolValueInUsdt(amount, match[2], { fetchImpl, apiKey });
+  } catch (error) {
+    // Bitget can list a newly issued reward token before CoinGecko indexes it.
+    // It is a missing optional conversion, not a reason to block every source.
+    if (/CoinGecko has no unambiguous match|Promotion pool has invalid amount or token/.test(String(error?.message))) return 'Не указан';
+    throw error;
+  }
 }
 
 function endTimeFromContent(content) {
@@ -115,4 +123,4 @@ async function collect({ fetchImpl = fetch, forceLatest = false } = {}) {
   return events;
 }
 
-module.exports = { name: SOURCE_NAME, collect, extractArticles, articleContent, normalizeArticle, promotionType, dedupeKey, parseAmount, endTimeFromContent };
+module.exports = { name: SOURCE_NAME, collect, extractArticles, articleContent, normalizeArticle, promotionType, dedupeKey, parseAmount, endTimeFromContent, poolFromContent };

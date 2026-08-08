@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { extractArticles, articleContent, normalizeArticle, dedupeKey, parseAmount, endTimeFromContent } = require('../sources/bitget-support-promotions');
+const { extractArticles, articleContent, normalizeArticle, dedupeKey, parseAmount, endTimeFromContent, poolFromContent } = require('../sources/bitget-support-promotions');
 
 test('extracts only article cards from the Current contests and promotions section', () => {
   const cards = extractArticles([
@@ -36,4 +36,16 @@ test('extracts a pool and Moscow-time end date from the current Bitget article f
   });
   assert.equal(event.fields[1][1], '20 000 USDT');
   assert.notEqual(event.fields[2][1], 'Не указан');
+});
+
+test('keeps monitoring when CoinGecko has not indexed a new reward token', async () => {
+  const pool = await poolFromContent('Пул торговли фьючерсами: 10 rSNDK', async () =>
+    new Response(JSON.stringify({ coins: [] })), 'demo-key');
+  assert.equal(pool, 'Не указан');
+});
+
+test('keeps monitoring when an article has an unparseable pool label', async () => {
+  const pool = await poolFromContent('Пул торговли: , USDT', async () =>
+    new Response(JSON.stringify({ coins: [] })), 'demo-key');
+  assert.equal(pool, 'Не указан');
 });
