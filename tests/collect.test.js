@@ -1,6 +1,13 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
-const { reconcileCandyBombDuplicates } = require('../scripts/collect');
+const { reconcileCandyBombDuplicates, selectAdapters } = require('../scripts/collect');
+
+test('selects only the scheduled source adapters', () => {
+  const adapters = [{ name: 'launchpool' }, { name: 'candy' }, { name: 'home' }];
+  assert.deepEqual(selectAdapters(adapters, 'launchpool'), [adapters[0]]);
+  assert.deepEqual(selectAdapters(adapters, 'all'), adapters);
+  assert.throws(() => selectAdapters(adapters, 'missing'), /Unknown or empty/);
+});
 
 test('matches a support CandyBomb article to its one active CandyBomb campaign', () => {
   const events = reconcileCandyBombDuplicates([

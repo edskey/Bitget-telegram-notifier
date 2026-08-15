@@ -13,13 +13,14 @@ test('normalizes a Launchpool project with a USDT reward pool', async () => {
   });
 });
 
-test('accepts the current Bitget Launchpool totalRewards response shape', async () => {
-  let status = 0;
+test('collects only active Launchpool products using the current response shape', async () => {
+  let calls = 0;
   const fetchImpl = async (url, options) => {
     assert.match(String(url), /launchpool\/product\/list/);
-    status = JSON.parse(options.body).status;
+    calls += 1;
+    assert.equal(JSON.parse(options.body).status, 2);
     return new Response(JSON.stringify({
-      code: '200', data: { data: status === 1 ? [] : [{
+      code: '200', data: { data: [{
         id: 'aeon-1', productName: 'AEON', productCoinName: 'USDT', totalRewards: '1166666', endTime: '3600000', startTime: '1',
         productSubList: [{ totalRewards: '1000000' }, { totalRewards: '166666' }],
       }] },
@@ -27,6 +28,7 @@ test('accepts the current Bitget Launchpool totalRewards response shape', async 
   };
   const events = await collect({ fetchImpl });
   assert.equal(events.length, 1);
+  assert.equal(calls, 1);
   assert.equal(events[0].id, 'bitget-launchpool:aeon-1');
   assert.equal(events[0].fields[1][1], '1 166 666 USDT');
 });

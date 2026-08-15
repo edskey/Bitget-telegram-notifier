@@ -2,7 +2,10 @@ name: Check monitored sources
 
 on:
   schedule:
-    - cron: '2-59/5 * * * *'
+    # Active Launchpool only: every 10 minutes, offset from the hour.
+    - cron: '2/10 * * * *'
+    # Heavier page/article sources: once an hour.
+    - cron: '3 * * * *'
   workflow_dispatch:
     inputs:
       test_source:
@@ -30,9 +33,21 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
+      - name: Select scheduled sources
+        id: sources
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "enabled=all" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event.schedule }}" = "3 * * * *" ]; then
+            echo "enabled=bitget-candybomb-current,bitget-home-promotions-v2,bitget-current-promotions" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=bitget-launchpool" >> "$GITHUB_OUTPUT"
+          fi
       - name: Collect events
         env:
           TEST_SOURCE: ${{ inputs.test_source || 'none' }}
+          ENABLED_SOURCES: ${{ steps.sources.outputs.enabled }}
           COINGECKO_DEMO_API_KEY: ${{ secrets.COINGECKO_DEMO_API_KEY }}
         run: node scripts/collect.js > /tmp/events.json
       - name: Trigger protected Vercel endpoint

@@ -36,7 +36,7 @@ async function normalizeProduct(product, { fetchImpl, now, force = false }) {
 }
 
 async function collect({ fetchImpl = fetch, forceLatest = false } = {}) {
-  const statuses = [1, 2]; // upcoming and active, as defined by Bitget's public client.
+  const statuses = [2]; // active pools only
   const responses = [];
   for (const status of statuses) {
     let response = await fetchImpl(API_URL, {

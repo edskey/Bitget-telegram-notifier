@@ -39,9 +39,19 @@ function reconcileCandyBombDuplicates(events) {
   });
 }
 
-async function main() {
+function selectAdapters(adapterList, enabledSources = 'all') {
+  const enabled = String(enabledSources || 'all').trim();
+  if (enabled === 'all') return adapterList;
+  const names = new Set(enabled.split(',').map((name) => name.trim()).filter(Boolean));
+  const selected = adapterList.filter((adapter) => names.has(adapter.name));
+  if (!selected.length || selected.length !== names.size) throw new Error(`Unknown or empty ENABLED_SOURCES: ${enabled}`);
+  return selected;
+}
+
+async function main({ adapterList = adapters, enabledSources = process.env.ENABLED_SOURCES || 'all' } = {}) {
   const testSource = process.env.TEST_SOURCE || '';
-  const results = await Promise.all(adapters.map(async (adapter) => {
+  const selectedAdapters = selectAdapters(adapterList, enabledSources);
+  const results = await Promise.all(selectedAdapters.map(async (adapter) => {
     if (!adapter?.name || typeof adapter.collect !== 'function') throw new Error('Invalid source adapter');
     const events = await adapter.collect({
       forceLatest: testSource === adapter.name,
@@ -50,8 +60,8 @@ async function main() {
     return events.map((event) => validateEvent(event, adapter.name));
   }));
   const events = reconcileCandyBombDuplicates(results.flat()).slice(0, MAX_EVENTS);
-  process.stderr.write(`Collected ${events.length} events from ${adapters.length} sources\n`);
-  process.stdout.write(JSON.stringify({ sources: adapters.map((adapter) => adapter.name), events }));
+  process.stderr.write(`Collected ${events.length} events from ${selectedAdapters.length} sources\n`);
+  process.stdout.write(JSON.stringify({ sources: selectedAdapters.map((adapter) => adapter.name), events }));
 }
 
 if (require.main === module) {
@@ -61,4 +71,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { main, reconcileCandyBombDuplicates, validateEvent };
+module.exports = { main, reconcileCandyBombDuplicates, validateEvent, selectAdapters };
