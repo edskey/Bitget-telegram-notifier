@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       test_source:
-        description: 'Источник для одного реального тестового уведомления'
+        description: 'Optional manual test source'
         required: false
         default: none
         type: choice
@@ -36,10 +36,13 @@ jobs:
       - name: Select scheduled sources
         id: sources
         shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_SCHEDULE: ${{ github.event.schedule }}
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             echo "enabled=all" >> "$GITHUB_OUTPUT"
-          elif [ "${{ github.event.schedule }}" = "3 * * * *" ]; then
+          elif [ "$EVENT_SCHEDULE" = "3 * * * *" ]; then
             echo "enabled=bitget-candybomb-current,bitget-home-promotions-v2,bitget-current-promotions" >> "$GITHUB_OUTPUT"
           else
             echo "enabled=bitget-launchpool" >> "$GITHUB_OUTPUT"
@@ -57,9 +60,4 @@ jobs:
         run: |
           test -n "$CHECK_URL"
           test -n "$CHECK_SECRET"
-          curl --fail-with-body --silent --show-error --max-time 30 \
-            -X POST \
-            -H "Authorization: Bearer $CHECK_SECRET" \
-            -H "Content-Type: application/json" \
-            --data-binary @/tmp/events.json \
-            "$CHECK_URL"
+          curl --fail-with-body --silent --show-error --max-time 30             -X POST             -H "Authorization: Bearer $CHECK_SECRET"             -H "Content-Type: application/json"             --data-binary @/tmp/events.json             "$CHECK_URL"
